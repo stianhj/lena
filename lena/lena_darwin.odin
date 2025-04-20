@@ -207,7 +207,7 @@ os_step :: proc() {
 
 			// NOTE: It seems that MacOS registers holding down a key as multiple 
 			// "KeyDown" events. This check aims to ensure that we are properly
-			// assigning a "PRESSED" state if, and only i, we aren't already holding
+			// assigning a "PRESSED" state if, and only if, we aren't already holding
 			// down the key.
 			if ctx.key_state[code] & KEY_STATE_HELD != KEY_STATE_HELD {
 				ctx.key_state[code] = KEY_STATE_HELD | KEY_STATE_PRESSED
