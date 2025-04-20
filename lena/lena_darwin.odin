@@ -176,6 +176,8 @@ os_init :: proc(title: string) {
 }
 
 os_step :: proc() {
+	NS.scoped_autoreleasepool()
+
 	if ctx.step_time > 0 {
 		time.accurate_sleep(ctx.step_time - time.diff(ctx.prev_time, time.now()))
 	}
@@ -202,7 +204,15 @@ os_step :: proc() {
 		#partial switch _type {
 		case .KeyDown:
 			code := switch_keys(event->keyCode())
-			ctx.key_state[code] = KEY_STATE_HELD | KEY_STATE_PRESSED
+
+			// NOTE: It seems that MacOS registers holding down a key as multiple 
+			// "KeyDown" events. This check aims to ensure that we are properly
+			// assigning a "PRESSED" state if, and only i, we aren't already holding
+			// down the key.
+			if ctx.key_state[code] & KEY_STATE_HELD != KEY_STATE_HELD {
+				ctx.key_state[code] = KEY_STATE_HELD | KEY_STATE_PRESSED
+			}
+
 			return
 
 		case .KeyUp:
