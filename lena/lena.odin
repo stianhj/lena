@@ -337,7 +337,7 @@ set_pixel_on_image :: proc "contextless" (target: Image, x, y: int, color: u8) {
 
 @private
 set_pixel_on_image_no_shift :: proc "contextless" (target: Image, x, y: int, color: u8) {
-	if x < 0 || y < 0 || x > target.w - 1 || y > target.h - 1 do return
+	if x < 0 || y < 0 || x >= target.w || y >= target.h do return
 	index := x + y * target.w
 	color := color
 	if .BLEND in ctx.draw_state {
@@ -752,6 +752,11 @@ draw_text_int :: proc(target: Image, t: string, x, y, wrap_width, left_margin, c
 	ctx.mask_index = ctx.text_index
 	defer ctx.mask_index = saved_color
 
+	// we also hijack the alpha, because stb_ttf creates 1 bit images
+	saved_alpha := ctx.alpha_index
+	ctx.alpha_index = 0
+	defer ctx.alpha_index = saved_alpha
+
 	// and again, we hijack the draw_state and add our nonsense to it
 	saved_state := ctx.draw_state
 	ctx.draw_state += {.MASK}
@@ -833,7 +838,7 @@ draw_text_int :: proc(target: Image, t: string, x, y, wrap_width, left_margin, c
 }
 
 is_inside :: proc(r: Rect, x, y: int) -> bool {
-	return x > r.x && y > r.y && x < r.x + r.w && y < r.y + r.h
+	return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h
 }
 
 is_overlapped :: proc(a, b: Rect) -> bool {
