@@ -11,9 +11,9 @@ import "core:image/png"
 
 import "vendor:stb/truetype"
 
-MAJOR :: 1
+MAJOR :: 0
 MINOR :: 0
-PATCH :: 0
+PATCH :: 1
 
 IS_WINDOWS :: ODIN_OS == .Windows
 IS_DARWIN  :: ODIN_OS == .Darwin
