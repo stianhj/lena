@@ -81,6 +81,8 @@ Context :: struct {
 	palette_shift:     u8,
 	window_background: u8,
 
+	clip_rect: Rect,
+
 	palette:       [PALETTE_SIZE]u32,
 	blend_palette: [BLEND_PALETTE_SIZE]u8,
 
@@ -280,6 +282,18 @@ set_window_background :: proc "contextless" (color:  u8) { ctx.window_background
 set_palette_shift     :: proc "contextless" (offset: u8) { ctx.palette_shift     = offset }
 set_alpha_index       :: proc "contextless" (alpha:  u8) { ctx.alpha_index       = alpha  }
 
+set_clip_rect :: proc "contextless" (rect: Rect = {}) {
+	ctx.clip_rect = get_intersect({0, 0, ctx.screen.w, ctx.screen.h}, rect)
+}
+
+@private
+clip_rect_or_target_size :: proc "contextless" (target: Image) -> Rect {
+	if ctx.clip_rect.w == 0 || ctx.clip_rect.h == 0 {
+		return {0, 0, target.w, target.h}
+	}
+	return ctx.clip_rect
+}
+
 toggle_fullscreen :: proc() {
 	ctx.flags ~= {.FULLSCREEN}
 	#force_inline os_update_fullscreen()
@@ -328,16 +342,21 @@ set_pixel :: #force_inline proc "contextless" (x, y: int, color: u8) {
 	set_pixel_on_image(ctx.screen, x, y, color)
 }
 set_pixel_on_image :: proc "contextless" (target: Image, x, y: int, color: u8) {
+	if x < 0 || y < 0 || x >= target.w || y >= target.h do return
+
 	color := color
 	if .SHIFT in ctx.draw_state {
 		color = palette_shift_value(color)
 	}
-	#force_inline set_pixel_on_image_no_shift(target, x, y, color)
+
+	clip_rect := clip_rect_or_target_size(target)
+	#force_inline set_pixel_on_image_no_shift(target, x, y, color, clip_rect)
 }
 
 @private
-set_pixel_on_image_no_shift :: proc "contextless" (target: Image, x, y: int, color: u8) {
-	if x < 0 || y < 0 || x >= target.w || y >= target.h do return
+set_pixel_on_image_no_shift :: proc "contextless" (target: Image, x, y: int, color: u8, clip_rect: Rect) #no_bounds_check {
+	if !is_inside(clip_rect, x, y) do return
+
 	index := x + y * target.w
 	color := color
 	if .BLEND in ctx.draw_state {
@@ -436,10 +455,16 @@ draw_image_int :: proc "contextless" (source, target: Image, src, dst: Rect, $dr
 		return
 	}
 
-	cx1   := 0
-	cy1   := 0
-	cx2   := target.w
-	cy2   := target.h
+	clip_rect := clip_rect_or_target_size(target)
+
+	if clip_rect.w == 0 || clip_rect.h == 0 {
+		return
+	}
+
+	cx1   := clip_rect.x
+	cy1   := clip_rect.y
+	cx2   := cx1 + clip_rect.w
+	cy2   := cx2 + clip_rect.h
 	stepx := (src.w << 10) / dst.w
 	stepy := (src.h << 10) / dst.h
 	sy    := src.y << 10
@@ -537,14 +562,16 @@ mouse_released :: #force_inline proc(button: Mouse) -> bool {
 
 // this is a 'fast' line drawer for just filling rows on targets
 @private
-fill_line :: proc(target: Image, x, y, x2: int, color: u8) #no_bounds_check {
+horizontal_line :: proc(target: Image, x, y, x2: int, color: u8, clip_rect: Rect) #no_bounds_check {
 	w := target.w - 1
+
 	if y < 0 || y > target.h - 1 do return
 	if x < 0 && x2 < 0 || x > w && x2 > w do return
+	if y < clip_rect.y || y > clip_rect.y + clip_rect.h - 1 do return
 
-	row := clamp(y, 0, target.h - 1) * target.w
-	min := row + clamp(x,  0, w)
-	max := row + clamp(x2, 0, w)
+	row := clamp(y,  0, target.h - 1) * target.w
+	min := row + clamp(x,  clip_rect.x, clip_rect.x + clip_rect.w)
+	max := row + clamp(x2, clip_rect.x - 1, clip_rect.x + clip_rect.w - 1)
 
 	color := color
 	if .SHIFT in ctx.draw_state {
@@ -567,13 +594,17 @@ draw_rect :: #force_inline proc(r: Rect, color: u8, filled: bool) {
 	draw_rect_to_image(ctx.screen, r, color, filled)
 }
 draw_rect_to_image :: proc(target: Image, r: Rect, color: u8, filled: bool) #no_bounds_check {
+	if target.w == 0 || target.h == 0 do return
+
 	color := color
 	if .SHIFT in ctx.draw_state {
 		color = palette_shift_value(color)
 	}
 
+	clip_rect := clip_rect_or_target_size(target)
+
 	if filled {
-		rect := get_intersect(r, {0, 0, target.w, target.h})
+		rect := get_intersect(r, clip_rect)
 		if rect.w == 0 || rect.h == 0 {
 			return
 		}
@@ -602,13 +633,13 @@ draw_rect_to_image :: proc(target: Image, r: Rect, color: u8, filled: bool) #no_
 	w := min(target.w, r.x + r.w - 1)
 	h := min(target.h, r.y + r.h - 1)
 
-	fill_line(target, r.x, r.y, w, color)
-	fill_line(target, r.x, h,   w, color)
+	horizontal_line(target, r.x, r.y, w, color, clip_rect)
+	horizontal_line(target, r.x, h,   w, color, clip_rect)
 
 	// this could be faster
 	for i := r.y + 1; i <= h - 1; i += 1 {
-		set_pixel_on_image_no_shift(target, r.x, i, color)
-		set_pixel_on_image_no_shift(target, w,   i, color)
+		set_pixel_on_image_no_shift(target, r.x, i, color, clip_rect)
+		set_pixel_on_image_no_shift(target, w,   i, color, clip_rect)
 	}
 }
 
@@ -617,42 +648,47 @@ draw_circle :: #force_inline proc(cx, cy, radius: int, color: u8, filled: bool) 
 }
 draw_circle_to_image :: proc(target: Image, cx, cy, radius: int, color: u8, filled: bool) #no_bounds_check {
 	if radius == 0 do return
+	if target.w == 0 || target.h == 0 do return
 
 	color := color
 	if .SHIFT in ctx.draw_state {
 		color = palette_shift_value(color)
 	}
 
+	clip_rect := clip_rect_or_target_size(target)
+
 	x, y := radius, 0
 
 	if filled {
-		error := -radius
-		for x >= y {
-			pre_y := y
-			error += y; y += 1; error += y
+		horizontal_line(target, -x + cx, cy, x + cx, color, clip_rect)
 
-			fill_line(target, cx - x, cy + pre_y, cx + x, color)
-			if pre_y != 0 {
-				fill_line(target, cx - x, cy - pre_y, cx + x, color)
+		P := 1 - radius
+		for x > y {
+			y += 1
+			if P <= 0 {
+				P = P + 2 * y + 1
+			} else {
+				x -= 1
+				P = P + 2 * y - 2 * x + 1
 			}
+			if x < y do break
 
-			if error >= 0 {
-				if x != pre_y {
-					fill_line(target, cx - pre_y, cy + x, cx + pre_y, color)
-					if pre_y != 0 {
-						fill_line(target, cx - pre_y, cy - x, cx + pre_y, color)
-					}
-				}
-				error -= x; x -= 1; error -= x
+			horizontal_line(target, -x + cx,  y + cy, x + cx, color, clip_rect)
+			horizontal_line(target, -x + cx, -y + cy, x + cx, color, clip_rect)
+
+			if x != y {
+				horizontal_line(target, -y + cx,  x + cy, y + cx, color, clip_rect)
+				horizontal_line(target, -y + cx, -x + cy, y + cx, color, clip_rect)
 			}
 		}
+
 		return
 	}
 
-	set_pixel_on_image_no_shift(target,  x + cx,  y + cy, color)
-	set_pixel_on_image_no_shift(target, -x + cx,  y + cy, color)
-	set_pixel_on_image_no_shift(target,  y + cx, -x + cy, color)
-	set_pixel_on_image_no_shift(target, -y + cx,  x + cy, color)
+	set_pixel_on_image_no_shift(target,  x + cx,  y + cy, color, clip_rect)
+	set_pixel_on_image_no_shift(target, -x + cx,  y + cy, color, clip_rect)
+	set_pixel_on_image_no_shift(target,  y + cx, -x + cy, color, clip_rect)
+	set_pixel_on_image_no_shift(target, -y + cx,  x + cy, color, clip_rect)
 
 	P := 1 - radius
 	for x > y {
@@ -665,16 +701,16 @@ draw_circle_to_image :: proc(target: Image, cx, cy, radius: int, color: u8, fill
 		}
 		if x < y do break
 
-		set_pixel_on_image_no_shift(target,  x + cx,  y + cy, color)
-		set_pixel_on_image_no_shift(target, -x + cx,  y + cy, color)
-		set_pixel_on_image_no_shift(target,  x + cx, -y + cy, color)
-		set_pixel_on_image_no_shift(target, -x + cx, -y + cy, color)
+		set_pixel_on_image_no_shift(target,  x + cx,  y + cy, color, clip_rect)
+		set_pixel_on_image_no_shift(target, -x + cx,  y + cy, color, clip_rect)
+		set_pixel_on_image_no_shift(target,  x + cx, -y + cy, color, clip_rect)
+		set_pixel_on_image_no_shift(target, -x + cx, -y + cy, color, clip_rect)
 
 		if x != y {
-			set_pixel_on_image_no_shift(target,  y + cx,  x + cy, color)
-			set_pixel_on_image_no_shift(target, -y + cx,  x + cy, color)
-			set_pixel_on_image_no_shift(target,  y + cx, -x + cy, color)
-			set_pixel_on_image_no_shift(target, -y + cx, -x + cy, color)
+			set_pixel_on_image_no_shift(target,  y + cx,  x + cy, color, clip_rect)
+			set_pixel_on_image_no_shift(target, -y + cx,  x + cy, color, clip_rect)
+			set_pixel_on_image_no_shift(target,  y + cx, -x + cy, color, clip_rect)
+			set_pixel_on_image_no_shift(target, -y + cx, -x + cy, color, clip_rect)
 		}
 	}
 }
@@ -683,6 +719,8 @@ draw_line :: #force_inline proc(x1, y1, x2, y2: int, color: u8) {
 	draw_line_to_image(ctx.screen, x1, y1, x2, y2, color)
 }
 draw_line_to_image :: proc(target: Image, x1, y1, x2, y2: int, color: u8) #no_bounds_check {
+	if target.w == 0 || target.h == 0 do return
+
 	x1 := x1
 	y1 := y1
 	dx :=  math.abs(x2 - x1)
@@ -696,8 +734,10 @@ draw_line_to_image :: proc(target: Image, x1, y1, x2, y2: int, color: u8) #no_bo
 		color = palette_shift_value(color)
 	}
 
+	clip_rect := clip_rect_or_target_size(target)
+
 	for {
-		set_pixel_on_image_no_shift(target, x1, y1, color)
+		set_pixel_on_image_no_shift(target, x1, y1, color, clip_rect)
 
 		if x1 == x2 && y1 == y2 do break
 
@@ -837,15 +877,15 @@ draw_text_int :: proc(target: Image, t: string, x, y, wrap_width, left_margin, c
 	return sx, sy
 }
 
-is_inside :: proc(r: Rect, x, y: int) -> bool {
+is_inside :: proc "contextless" (r: Rect, x, y: int) -> bool {
 	return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h
 }
 
-is_overlapped :: proc(a, b: Rect) -> bool {
+is_overlapped :: proc "contextless" (a, b: Rect) -> bool {
 	return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
-get_intersect :: proc(a, b: Rect) -> Rect {
+get_intersect :: proc "contextless" (a, b: Rect) -> Rect {
 	x1 := max(a.x, b.x)
 	y1 := max(a.y, b.y)
 	x2 := min(a.x + a.w, b.x + b.w)

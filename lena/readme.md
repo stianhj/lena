@@ -98,6 +98,7 @@ import "shared:lena"
 	- [set_alpha_index](#set_alpha_index)
 	- [set_mask_color](#set_mask_color)
 	- [set_palette_shift](#set_palette_shift)
+	- [set_clip_rect](#set_clip_rect)
 	- [set_text_color](#set_text_color)
 	- [set_bold_color](#set_bold_color)
 	- [draw_image](#draw_image)
@@ -1226,6 +1227,14 @@ set_palette_shift :: proc(offset: u8) {...}
 ```
 
 Sets a palette offset to use with the `SHIFT` draw state.
+
+### set_clip_rect
+
+```odin
+set_clip_rect :: proc(rect: Rect = {}) {...}
+```
+
+Sets a clipping rectangle for subsequent drawing operations.  Also works for draw-to-image operations.
 
 ### set_text_color
 

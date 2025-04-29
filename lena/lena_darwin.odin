@@ -185,6 +185,7 @@ os_step :: proc() {
 	ctx.prev_time = time.now()
 
 	bounds := ctx.nswindow->contentView()->bounds()
+
 	ctx.window.w = cast(int) bounds.width
 	ctx.window.h = cast(int) bounds.height
 
@@ -204,11 +205,7 @@ os_step :: proc() {
 		#partial switch _type {
 		case .KeyDown:
 			code := switch_keys(event->keyCode())
-
-			// NOTE: It seems that MacOS registers holding down a key as multiple 
-			// "KeyDown" events. This check aims to ensure that we are properly
-			// assigning a "PRESSED" state if, and only if, we aren't already holding
-			// down the key.
+			// macOS helpfully sends multiple keydown events, so we gate it
 			if ctx.key_state[code] & KEY_STATE_HELD != KEY_STATE_HELD {
 				ctx.key_state[code] = KEY_STATE_HELD | KEY_STATE_PRESSED
 			}
