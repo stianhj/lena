@@ -13,7 +13,7 @@ import "vendor:stb/truetype"
 
 MAJOR :: 0
 MINOR :: 0
-PATCH :: 1
+PATCH :: 2
 
 IS_WINDOWS :: ODIN_OS == .Windows
 IS_DARWIN  :: ODIN_OS == .Darwin
@@ -660,25 +660,24 @@ draw_circle_to_image :: proc(target: Image, cx, cy, radius: int, color: u8, fill
 	x, y := radius, 0
 
 	if filled {
-		horizontal_line(target, -x + cx, cy, x + cx, color, clip_rect)
+		error := -radius
+		for x >= y {
+			pre_y := y
+			error += y; y += 1; error += y
+			horizontal_line(target, cx - x, cy + pre_y, cx + x, color, clip_rect)
 
-		P := 1 - radius
-		for x > y {
-			y += 1
-			if P <= 0 {
-				P = P + 2 * y + 1
-			} else {
-				x -= 1
-				P = P + 2 * y - 2 * x + 1
+			if pre_y != 0 {
+				horizontal_line(target, cx - x, cy - pre_y, cx + x, color, clip_rect)
 			}
-			if x < y do break
 
-			horizontal_line(target, -x + cx,  y + cy, x + cx, color, clip_rect)
-			horizontal_line(target, -x + cx, -y + cy, x + cx, color, clip_rect)
-
-			if x != y {
-				horizontal_line(target, -y + cx,  x + cy, y + cx, color, clip_rect)
-				horizontal_line(target, -y + cx, -x + cy, y + cx, color, clip_rect)
+			if error >= 0 {
+				if x != pre_y {
+					horizontal_line(target, cx - pre_y, cy + x, cx + pre_y, color, clip_rect)
+					if pre_y != 0 {
+						horizontal_line(target, cx - pre_y, cy - x, cx + pre_y, color, clip_rect)
+					}
+				}
+				error -= x; x -= 1; error -= x
 			}
 		}
 

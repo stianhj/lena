@@ -1,4 +1,4 @@
-# Lena Documentation v0.0.0
+# Lena Documentation v0.0.2
 
 ## Installation
 
