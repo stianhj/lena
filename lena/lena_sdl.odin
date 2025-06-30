@@ -4,8 +4,9 @@ package lena
 
 import "core:mem"
 import "core:strings"
+import "core:time"
 
-import SDL "vendor:SDL3"
+import SDL "vendor:sdl3"
 
 Platform_Context :: struct {
 	sdl_window:   ^SDL.Window,
